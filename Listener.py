@@ -59,23 +59,29 @@ class Listener():
         
     def record(self, frames):
         # Save the recorded audio to a file
-        wf = wave.open(f'{self.WAVE_OUTPUT_LOCATION}speech_{self.n_recordings}.wav', 'wb')
+        filename = f'{self.WAVE_OUTPUT_LOCATION}speech_{self.n_recordings}.wav'
+        wf = wave.open(filename, 'wb')
         self.n_recordings += 1
         wf.setnchannels(self.CHANNELS)
         wf.setsampwidth(self.p.get_sample_size(self.FORMAT))
         wf.setframerate(self.RATE)
         wf.writeframes(b''.join(frames))
         wf.close()
+        return filename
 
     def is_speaking(self, data):
         audio_data = np.frombuffer(data, dtype=np.int16).astype(np.int32)
         rms = np.sqrt(np.mean(np.square(audio_data)))
         return rms > self.SILENCE_THRESHOLD
     
+    def record_next_speech(self):
+        self.start()
+        frames = self.listen()
+        filename = self.record(frames)
+        self.stop()
+        return filename
+
 if __name__ == "__main__":
     listener = Listener()
-    listener.start()
-    frames = listener.listen()
-    listener.record(frames)
-    listener.stop()
-    print("Done recording.")
+    filename = listener.record_next_speech()
+    print("Recorded speech to " + filename)
