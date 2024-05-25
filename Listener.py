@@ -2,6 +2,8 @@ import pyaudio
 import wave
 import numpy as np
 import time
+from transformers import pipeline
+import redis
 
 class Listener():
     # Configuration
@@ -73,15 +75,38 @@ class Listener():
         audio_data = np.frombuffer(data, dtype=np.int16).astype(np.int32)
         rms = np.sqrt(np.mean(np.square(audio_data)))
         return rms > self.SILENCE_THRESHOLD
+
+
+class SentimentAnalyzer():
+    def __init__(self):
+        self.classifier = pipeline("sentiment-analysis")
+        self.speech_recognizer = pipeline('automatic-speech-recognition')
+
+    def analyze_sentiment(self, audio_file):
+        text = self.speech_recognizer(audio_file)['text']
+        if text == "":
+            return None
+        sentiment = self.classifier(text)
+        score = sentiment[0]['score']
+        if sentiment[0]['label'] == 'NEGATIVE':
+            score *= -1
+        print(f'Heard "{text}" with sentiment score {score}')
+        return score
     
-    def record_next_speech(self):
-        self.start()
-        frames = self.listen()
-        filename = self.record(frames)
-        self.stop()
-        return filename
 
 if __name__ == "__main__":
     listener = Listener()
-    filename = listener.record_next_speech()
-    print("Recorded speech to " + filename)
+    listener.start()
+    analyzer = SentimentAnalyzer()
+    r = redis.Redis(host='localhost', port=6379, db=0)
+
+    try:
+        while True:
+            frames = listener.listen()
+            audio_file = listener.record(frames)
+            sentiment_score = analyzer.analyze_sentiment(audio_file)
+            if sentiment_score is not None:
+                r.rpush('sentiment_scores', sentiment_score)
+    except KeyboardInterrupt:
+        listener.stop()
+        print("Listener stopped.")
